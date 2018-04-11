@@ -42,12 +42,17 @@ export function queryRenderedSymbols(styleLayers: {[string]: StyleLayer},
                             crossTileSymbolIndex: CrossTileSymbolIndex) {
     const result = {};
     const renderedSymbols = collisionIndex.queryRenderedSymbols(queryGeometry);
+    const queryBuckets = [];
     for (const bucketInstanceId of Object.keys(renderedSymbols).map(Number)) {
-        const queryData = crossTileSymbolIndex.retainedBuckets[bucketInstanceId];
-        const bucketSymbols = queryData.featureIndex.lookupSymbolFeatures(
-                renderedSymbols[bucketInstanceId],
-                queryData.bucketIndex,
-                queryData.sourceLayerIndex,
+        queryBuckets.push(crossTileSymbolIndex.retainedBuckets[bucketInstanceId]);
+    }
+    queryBuckets.sort(sortTilesIn);
+
+    for (const queryBucket of queryBuckets) {
+        const bucketSymbols = queryBucket.featureIndex.lookupSymbolFeatures(
+                renderedSymbols[queryBucket.bucketInstanceId],
+                queryBucket.bucketIndex,
+                queryBucket.sourceLayerIndex,
                 params.filter,
                 params.layers,
                 styleLayers);

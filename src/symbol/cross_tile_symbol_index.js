@@ -117,16 +117,22 @@ class CrossTileIDs {
 }
 
 class RetainedBucket {
+    bucketInstanceId: number;
     featureIndex: FeatureIndex;
     sourceLayerIndex: number;
     bucketIndex: number;
+    tileID: OverscaledTileID;
 
-    constructor(featureIndex: FeatureIndex,
+    constructor(bucketInstanceId: number,
+                featureIndex: FeatureIndex,
                 sourceLayerIndex: number,
-                bucketIndex: number) {
+                bucketIndex: number,
+                tileID: OverscaledTileID) {
+        this.bucketInstanceId = bucketInstanceId;
         this.featureIndex = featureIndex;
         this.sourceLayerIndex = sourceLayerIndex;
         this.bucketIndex = bucketIndex;
+        this.tileID = tileID;
     }
 }
 
@@ -259,9 +265,11 @@ class CrossTileSymbolIndex {
             // the matching FeatureIndex/CollisionBoxArray/data for querying purposes
             this.lastUsedBuckets[symbolBucket.bucketInstanceId] = true;
             this.retainedBuckets[symbolBucket.bucketInstanceId] = new RetainedBucket(
+                symbolBucket.bucketInstanceId,
                 bucketFeatureIndex,
                 symbolBucket.sourceLayerIndex,
-                symbolBucket.index
+                symbolBucket.index,
+                tile.tileID
             );
 
 
