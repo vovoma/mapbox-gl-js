@@ -115,14 +115,7 @@ class FeatureIndex {
         const matching = this.grid.query(minX - queryPadding, minY - queryPadding, maxX + queryPadding, maxY + queryPadding);
         matching.sort(topDownFeatureComparator);
         const result = {};
-        let previousIndex;
-        for (let k = 0; k < matching.length; k++) {
-            const index = matching[k];
-
-            // don't check the same feature more than once
-            if (index === previousIndex) continue;
-            previousIndex = index;
-
+        for (const index of matching) {
             const match = this.featureIndexArray.get(index);
             let geometry = null;
             this.generateGeoJSONFeature(
