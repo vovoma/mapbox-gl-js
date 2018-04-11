@@ -8,7 +8,7 @@ import Protobuf from 'pbf';
 import GeoJSONFeature from '../util/vectortile_to_geojson';
 import featureFilter from '../style-spec/feature_filter';
 import SymbolBucket from '../data/bucket/symbol_bucket';
-import { RasterBoundsArray } from '../data/array_types';
+import { RasterBoundsArray, CollisionBoxArray } from '../data/array_types';
 import rasterBoundsAttributes from '../data/raster_bounds_attributes';
 import EXTENT from '../data/extent';
 import Point from '@mapbox/point-geometry';
@@ -65,6 +65,7 @@ class Tile {
     state: TileState;
     timeAdded: any;
     fadeEndTime: any;
+    collisionBoxArray: ?CollisionBoxArray;
     redoWhenDone: boolean;
     showCollisionBoxes: boolean;
     placementSource: any;
@@ -141,7 +142,7 @@ class Tile {
 
         // empty GeoJSON tile
         if (!data) {
-            this.latestFeatureIndex = new FeatureIndex(this.tileID);
+            this.collisionBoxArray = new CollisionBoxArray();
             return;
         }
 
@@ -158,6 +159,7 @@ class Tile {
                 this.latestFeatureIndex.rawTileData = this.latestRawTileData;
             }
         }
+        this.collisionBoxArray = data.collisionBoxArray;
         this.buckets = deserializeBucket(data.buckets, painter.style);
 
         if (justReloaded) {

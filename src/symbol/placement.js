@@ -69,7 +69,6 @@ class Placement {
     lastPlacementChangeTime: number;
     stale: boolean;
     fadeDuration: number;
-    bucketInstanceIds: {[number]: boolean};
 
     constructor(transform: Transform, fadeDuration: number) {
         this.transform = transform.clone();
@@ -78,8 +77,6 @@ class Placement {
         this.opacities = {};
         this.stale = false;
         this.fadeDuration = fadeDuration;
-
-        this.bucketInstanceIds = {};
     }
 
     placeLayerTile(styleLayer: StyleLayer, tile: Tile, showCollisionBoxes: boolean, seenCrossTileIDs: { [string | number]: boolean }) {
@@ -87,7 +84,7 @@ class Placement {
         if (!symbolBucket || !tile.latestFeatureIndex)
             return;
 
-        const collisionBoxArray = tile.latestFeatureIndex.collisionBoxArray;
+        const collisionBoxArray = tile.collisionBoxArray;
 
         const layout = symbolBucket.layers[0].layout;
 
@@ -122,10 +119,6 @@ class Placement {
 
         const iconWithoutText = !bucket.hasTextData() || layout.get('text-optional');
         const textWithoutIcon = !bucket.hasIconData() || layout.get('icon-optional');
-
-        // Mark this bucket version as "used" by this placement.
-        // This is necessary to hold onto tile data for symbol querying
-        this.bucketInstanceIds[bucket.bucketInstanceId] = true;
 
         for (const symbolInstance of bucket.symbolInstances) {
             if (!seenCrossTileIDs[symbolInstance.crossTileID]) {
@@ -279,7 +272,7 @@ class Placement {
         for (const tile of tiles) {
             const symbolBucket = ((tile.getBucket(styleLayer): any): SymbolBucket);
             if (symbolBucket && tile.latestFeatureIndex) {
-                this.updateBucketOpacities(symbolBucket, seenCrossTileIDs, tile.latestFeatureIndex.collisionBoxArray);
+                this.updateBucketOpacities(symbolBucket, seenCrossTileIDs, tile.collisionBoxArray);
             }
         }
     }

@@ -18,7 +18,7 @@ import type StyleLayer from '../style/style_layer';
 import type {FeatureFilter} from '../style-spec/feature_filter';
 import type Transform from '../geo/transform';
 
-import { FeatureIndexArray, CollisionBoxArray } from './array_types';
+import { FeatureIndexArray } from './array_types';
 
 type QueryParameters = {
     scale: number,
@@ -40,7 +40,6 @@ class FeatureIndex {
     z: number;
     grid: Grid;
     featureIndexArray: FeatureIndexArray;
-    collisionBoxArray: CollisionBoxArray;
 
     rawTileData: ArrayBuffer;
     bucketLayerIDs: Array<Array<string>>;
@@ -50,15 +49,13 @@ class FeatureIndex {
 
     constructor(tileID: OverscaledTileID,
                 grid?: Grid,
-                featureIndexArray?: FeatureIndexArray,
-                collisionBoxArray?: CollisionBoxArray) {
+                featureIndexArray?: FeatureIndexArray) {
         this.tileID = tileID;
         this.x = tileID.canonical.x;
         this.y = tileID.canonical.y;
         this.z = tileID.canonical.z;
         this.grid = grid || new Grid(EXTENT, 16, 0);
         this.featureIndexArray = featureIndexArray || new FeatureIndexArray();
-        this.collisionBoxArray = collisionBoxArray || new CollisionBoxArray();
     }
 
     insert(feature: VectorTileFeature, geometry: Array<Array<Point>>, featureIndex: number, sourceLayerIndex: number, bucketIndex: number) {
