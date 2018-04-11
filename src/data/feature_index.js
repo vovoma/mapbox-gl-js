@@ -14,7 +14,6 @@ import { arraysIntersect } from '../util/util';
 import { OverscaledTileID } from '../source/tile_id';
 import { register } from '../util/web_worker_transfer';
 
-import type CollisionIndex from '../symbol/collision_index';
 import type StyleLayer from '../style/style_layer';
 import type {FeatureFilter} from '../style-spec/feature_filter';
 import type Transform from '../geo/transform';
@@ -31,10 +30,7 @@ type QueryParameters = {
     params: {
         filter: FilterSpecification,
         layers: Array<string>,
-    },
-    sourceID: string,
-    bucketInstanceIds: { [number]: boolean },
-    collisionIndex: ?CollisionIndex
+    }
 }
 
 class FeatureIndex {
@@ -90,8 +86,8 @@ class FeatureIndex {
         }
     }
 
-    // Finds features in this tile at a particular position.
-    query(result: {[string]: Array<{ featureIndex: number, feature: GeoJSONFeature }>}, args: QueryParameters, styleLayers: {[string]: StyleLayer}) {
+    // Finds non-symbol features in this tile at a particular position.
+    query(args: QueryParameters, styleLayers: {[string]: StyleLayer}): {[string]: Array<{ featureIndex: number, feature: GeoJSONFeature }>} {
         if (!this.vtLayers) {
             this.vtLayers = new vt.VectorTile(new Protobuf(this.rawTileData)).layers;
             this.sourceLayerCoder = new DictionaryCoder(this.vtLayers ? Object.keys(this.vtLayers).sort() : ['_geojsonTileLayer']);
@@ -102,50 +98,26 @@ class FeatureIndex {
             filter = featureFilter(params.filter);
 
         const queryGeometry = args.queryGeometry;
+        const queryPadding = args.queryPadding * pixelsToTileUnits;
 
-        if (args.collisionIndex) {
-            // Querying symbol features
-            const matchingSymbols =
-                args.collisionIndex.queryRenderedSymbols(queryGeometry, this.tileID, args.tileSize / EXTENT, this.collisionBoxArray, args.sourceID, args.bucketInstanceIds);
-            matchingSymbols.sort();
-            this.filterMatching(result, matchingSymbols, this.collisionBoxArray, queryGeometry, filter, params.layers, styleLayers, pixelsToTileUnits, args.posMatrix, args.transform);
-        } else {
-            // Querying non-symbol features
-            const queryPadding = args.queryPadding * pixelsToTileUnits;
-
-            let minX = Infinity;
-            let minY = Infinity;
-            let maxX = -Infinity;
-            let maxY = -Infinity;
-            for (let i = 0; i < queryGeometry.length; i++) {
-                const ring = queryGeometry[i];
-                for (let k = 0; k < ring.length; k++) {
-                    const p = ring[k];
-                    minX = Math.min(minX, p.x);
-                    minY = Math.min(minY, p.y);
-                    maxX = Math.max(maxX, p.x);
-                    maxY = Math.max(maxY, p.y);
-                }
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (let i = 0; i < queryGeometry.length; i++) {
+            const ring = queryGeometry[i];
+            for (let k = 0; k < ring.length; k++) {
+                const p = ring[k];
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
             }
-
-            const matching = this.grid.query(minX - queryPadding, minY - queryPadding, maxX + queryPadding, maxY + queryPadding);
-            matching.sort(topDownFeatureComparator);
-            this.filterMatching(result, matching, this.featureIndexArray, queryGeometry, filter, params.layers, styleLayers, pixelsToTileUnits, args.posMatrix, args.transform);
         }
-    }
 
-    filterMatching(
-        result: {[string]: Array<{ featureIndex: number, feature: GeoJSONFeature }>},
-        matching: Array<any>,
-        array: FeatureIndexArray | CollisionBoxArray,
-        queryGeometry: Array<Array<Point>>,
-        filter: FeatureFilter,
-        filterLayerIDs: Array<string>,
-        styleLayers: {[string]: StyleLayer},
-        pixelsToTileUnits: number,
-        posMatrix: Float32Array,
-        transform: Transform
-    ) {
+        const matching = this.grid.query(minX - queryPadding, minY - queryPadding, maxX + queryPadding, maxY + queryPadding);
+        matching.sort(topDownFeatureComparator);
+        const result = {};
         let previousIndex;
         for (let k = 0; k < matching.length; k++) {
             const index = matching[k];
@@ -154,48 +126,103 @@ class FeatureIndex {
             if (index === previousIndex) continue;
             previousIndex = index;
 
-            const match = array.get(index);
-
-            const layerIDs = this.bucketLayerIDs[match.bucketIndex];
-            if (filterLayerIDs && !arraysIntersect(filterLayerIDs, layerIDs)) continue;
-
-            const sourceLayerName = this.sourceLayerCoder.decode(match.sourceLayerIndex);
-            const sourceLayer = this.vtLayers[sourceLayerName];
-            const feature = sourceLayer.feature(match.featureIndex);
-
-            if (!filter({zoom: this.tileID.overscaledZ}, feature)) continue;
-
+            const match = this.featureIndexArray.get(index);
             let geometry = null;
-
-            for (let l = 0; l < layerIDs.length; l++) {
-                const layerID = layerIDs[l];
-
-                if (filterLayerIDs && filterLayerIDs.indexOf(layerID) < 0) {
-                    continue;
-                }
-
-                const styleLayer = styleLayers[layerID];
-                if (!styleLayer) continue;
-
-                if (styleLayer.type !== 'symbol') {
-                    // all symbols already match the style
+            this.generateGeoJSONFeature(
+                result,
+                match.bucketIndex,
+                match.sourceLayerIndex,
+                match.featureIndex,
+                filter,
+                params.layers,
+                styleLayers,
+                (feature: VectorTileFeature, styleLayer: StyleLayer) => {
                     if (!geometry) {
                         geometry = loadGeometry(feature);
                     }
-                    if (!styleLayer.queryIntersectsFeature(queryGeometry, feature, geometry, this.z, transform, pixelsToTileUnits, posMatrix)) {
-                        continue;
-                    }
+                    return styleLayer.queryIntersectsFeature(queryGeometry, feature, geometry, this.z, args.transform, pixelsToTileUnits, args.posMatrix);
                 }
-
-                const geojsonFeature = new GeoJSONFeature(feature, this.z, this.x, this.y);
-                (geojsonFeature: any).layer = styleLayer.serialize();
-                let layerResult = result[layerID];
-                if (layerResult === undefined) {
-                    layerResult = result[layerID] = [];
-                }
-                layerResult.push({ featureIndex: index, feature: geojsonFeature });
-            }
+            );
         }
+
+        return result;
+    }
+
+    generateGeoJSONFeature(
+        result: {[string]: Array<{ featureIndex: number, feature: GeoJSONFeature }>},
+        bucketIndex: number,
+        sourceLayerIndex: number,
+        featureIndex: number,
+        filter: FeatureFilter,
+        filterLayerIDs: Array<string>,
+        styleLayers: {[string]: StyleLayer},
+        intersectionTest?: (feature: VectorTileFeature, styleLayer: StyleLayer) => boolean) {
+
+        const layerIDs = this.bucketLayerIDs[bucketIndex];
+        if (filterLayerIDs && !arraysIntersect(filterLayerIDs, layerIDs))
+            return;
+
+        const sourceLayerName = this.sourceLayerCoder.decode(sourceLayerIndex);
+        const sourceLayer = this.vtLayers[sourceLayerName];
+        const feature = sourceLayer.feature(featureIndex);
+
+        if (!filter({zoom: this.tileID.overscaledZ}, feature))
+            return;
+
+        for (let l = 0; l < layerIDs.length; l++) {
+            const layerID = layerIDs[l];
+
+            if (filterLayerIDs && filterLayerIDs.indexOf(layerID) < 0) {
+                continue;
+            }
+
+            const styleLayer = styleLayers[layerID];
+            if (!styleLayer) continue;
+
+            if (intersectionTest && !intersectionTest(feature, styleLayer)) {
+                // Only applied for non-symbol features
+                continue;
+            }
+
+            const geojsonFeature = new GeoJSONFeature(feature, this.z, this.x, this.y);
+            (geojsonFeature: any).layer = styleLayer.serialize();
+            let layerResult = result[layerID];
+            if (layerResult === undefined) {
+                layerResult = result[layerID] = [];
+            }
+            layerResult.push({ featureIndex: featureIndex, feature: geojsonFeature });
+        }
+    }
+
+    // Given a set of symbol indexes that have already been looked up,
+    // return a matching set of GeoJSONFeatures
+    lookupSymbolFeatures(symbolFeatureIndexes: Array<number>,
+                         bucketIndex: number,
+                         sourceLayerIndex: number,
+                         filterSpec: FilterSpecification,
+                         filterLayerIDs: Array<string>,
+                         styleLayers: {[string]: StyleLayer}) {
+        const result = {};
+        if (!this.vtLayers) {
+            this.vtLayers = new vt.VectorTile(new Protobuf(this.rawTileData)).layers;
+            this.sourceLayerCoder = new DictionaryCoder(this.vtLayers ? Object.keys(this.vtLayers).sort() : ['_geojsonTileLayer']);
+        }
+
+        const filter = featureFilter(filterSpec);
+
+        for (const symbolFeatureIndex of symbolFeatureIndexes) {
+            this.generateGeoJSONFeature(
+                result,
+                bucketIndex,
+                sourceLayerIndex,
+                symbolFeatureIndex,
+                filter,
+                filterLayerIDs,
+                styleLayers
+            );
+
+        }
+        return result;
     }
 
     hasLayer(id: string) {

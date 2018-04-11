@@ -106,7 +106,8 @@ class WorkerTile {
                     zoom: this.zoom,
                     pixelRatio: this.pixelRatio,
                     overscaling: this.overscaling,
-                    collisionBoxArray: collisionBoxArray
+                    collisionBoxArray: collisionBoxArray,
+                    sourceLayerIndex: sourceLayerIndex
                 });
 
                 bucket.populate(features, options);

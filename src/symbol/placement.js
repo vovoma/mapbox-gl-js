@@ -109,12 +109,12 @@ class Placement {
                 pixelsToTileUnits(tile, 1, this.transform.zoom));
 
         this.placeLayerBucket(symbolBucket, posMatrix, textLabelPlaneMatrix, iconLabelPlaneMatrix, scale, textPixelRatio,
-                showCollisionBoxes, seenCrossTileIDs, collisionBoxArray, tile.tileID.key, styleLayer.source);
+                showCollisionBoxes, seenCrossTileIDs, collisionBoxArray);
     }
 
     placeLayerBucket(bucket: SymbolBucket, posMatrix: mat4, textLabelPlaneMatrix: mat4, iconLabelPlaneMatrix: mat4,
             scale: number, textPixelRatio: number, showCollisionBoxes: boolean, seenCrossTileIDs: { [string | number]: boolean },
-            collisionBoxArray: ?CollisionBoxArray, tileKey: number, sourceID: string) {
+            collisionBoxArray: ?CollisionBoxArray) {
 
         const layout = bucket.layers[0].layout;
 
@@ -138,12 +138,18 @@ class Placement {
                 let placedGlyphCircles = null;
                 let placedIconBoxes = null;
 
+                let textFeatureIndex = 0;
+                let iconFeatureIndex = 0;
+
                 if (!symbolInstance.collisionArrays) {
                     symbolInstance.collisionArrays = bucket.deserializeCollisionBoxes(
                             ((collisionBoxArray: any): CollisionBoxArray),
                             symbolInstance.textBoxStartIndex, symbolInstance.textBoxEndIndex, symbolInstance.iconBoxStartIndex, symbolInstance.iconBoxEndIndex);
                 }
 
+                if (symbolInstance.collisionArrays.textFeatureIndex) {
+                    textFeatureIndex = symbolInstance.collisionArrays.textFeatureIndex;
+                }
                 if (symbolInstance.collisionArrays.textBox) {
                     placedGlyphBoxes = this.collisionIndex.placeCollisionBox(symbolInstance.collisionArrays.textBox,
                             layout.get('text-allow-overlap'), textPixelRatio, posMatrix);
@@ -175,6 +181,9 @@ class Placement {
                     offscreen = offscreen && placedGlyphCircles.offscreen;
                 }
 
+                if (symbolInstance.collisionArrays.iconFeatureIndex) {
+                    iconFeatureIndex = symbolInstance.collisionArrays.iconFeatureIndex;
+                }
                 if (symbolInstance.collisionArrays.iconBox) {
                     placedIconBoxes = this.collisionIndex.placeCollisionBox(symbolInstance.collisionArrays.iconBox,
                             layout.get('icon-allow-overlap'), textPixelRatio, posMatrix);
@@ -193,15 +202,15 @@ class Placement {
 
                 if (placeText && placedGlyphBoxes) {
                     this.collisionIndex.insertCollisionBox(placedGlyphBoxes.box, layout.get('text-ignore-placement'),
-                            tileKey, sourceID, bucket.bucketInstanceId, symbolInstance.textBoxStartIndex);
+                            bucket.bucketInstanceId, textFeatureIndex);
                 }
                 if (placeIcon && placedIconBoxes) {
                     this.collisionIndex.insertCollisionBox(placedIconBoxes.box, layout.get('icon-ignore-placement'),
-                            tileKey, sourceID, bucket.bucketInstanceId, symbolInstance.iconBoxStartIndex);
+                            bucket.bucketInstanceId, iconFeatureIndex);
                 }
                 if (placeText && placedGlyphCircles) {
                     this.collisionIndex.insertCollisionCircles(placedGlyphCircles.circles, layout.get('text-ignore-placement'),
-                            tileKey, sourceID, bucket.bucketInstanceId, symbolInstance.textBoxStartIndex);
+                            bucket.bucketInstanceId, textFeatureIndex);
                 }
 
                 assert(symbolInstance.crossTileID !== 0);

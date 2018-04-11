@@ -20,7 +20,8 @@ function makeTile(tileID, symbolInstances) {
     };
     return {
         tileID: tileID,
-        getBucket: () => bucket
+        getBucket: () => bucket,
+        latestFeatureIndex: {}
     };
 }
 
@@ -195,7 +196,7 @@ test('CrossTileSymbolIndex.addLayer', (t) => {
     t.end();
 });
 
-test('CrossTileSymbolIndex.pruneUnusedLayers', (t) => {
+test('CrossTileSymbolIndex.prune', (t) => {
     const index = new CrossTileSymbolIndex();
 
     const tileID = new OverscaledTileID(6, 0, 6, 8, 8);
@@ -212,7 +213,7 @@ test('CrossTileSymbolIndex.pruneUnusedLayers', (t) => {
     t.ok(index.layerIndexes[styleLayer.id]);
 
     // remove styleLayer
-    index.pruneUnusedLayers([]);
+    index.prune([]);
     t.notOk(index.layerIndexes[styleLayer.id]);
 
     t.end();

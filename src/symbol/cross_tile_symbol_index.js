@@ -6,6 +6,7 @@ import type {OverscaledTileID} from '../source/tile_id';
 import type SymbolBucket, {SymbolInstance} from '../data/bucket/symbol_bucket';
 import type StyleLayer from '../style/style_layer';
 import type Tile from '../source/tile';
+import type FeatureIndex from '../data/feature_index';
 
 /*
     The CrossTileSymbolIndex generally works on the assumption that
@@ -115,6 +116,20 @@ class CrossTileIDs {
     }
 }
 
+class RetainedBucket {
+    featureIndex: FeatureIndex;
+    sourceLayerIndex: number;
+    bucketIndex: number;
+
+    constructor(featureIndex: FeatureIndex,
+                sourceLayerIndex: number,
+                bucketIndex: number) {
+        this.featureIndex = featureIndex;
+        this.sourceLayerIndex = sourceLayerIndex;
+        this.bucketIndex = bucketIndex;
+    }
+}
+
 class CrossTileSymbolLayerIndex {
     indexes: {[zoom: string | number]: {[tileId: string | number]: TileLayerIndex}};
     usedCrossTileIDs: {[zoom: string | number]: {[crossTileID: number]: boolean}};
@@ -212,11 +227,15 @@ class CrossTileSymbolIndex {
     layerIndexes: {[layerId: string]: CrossTileSymbolLayerIndex};
     crossTileIDs: CrossTileIDs;
     maxBucketInstanceId: number;
+    lastUsedBuckets: {[number]: boolean};
+    retainedBuckets: {[number]: RetainedBucket};
 
     constructor() {
         this.layerIndexes = {};
         this.crossTileIDs = new CrossTileIDs();
         this.maxBucketInstanceId = 0;
+        this.lastUsedBuckets = {};
+        this.retainedBuckets = {};
     }
 
     addLayer(styleLayer: StyleLayer, tiles: Array<Tile>) {
@@ -230,15 +249,21 @@ class CrossTileSymbolIndex {
 
         for (const tile of tiles) {
             const symbolBucket = ((tile.getBucket(styleLayer): any): SymbolBucket);
-            if (!symbolBucket) continue;
+            const bucketFeatureIndex = tile.latestFeatureIndex;
+            if (!symbolBucket || !bucketFeatureIndex) continue;
 
             if (!symbolBucket.bucketInstanceId) {
                 symbolBucket.bucketInstanceId = ++this.maxBucketInstanceId;
-                // As long as this bucket is used in any committed placement, we have to hold onto
-                // the matching FeatureIndex/CollisionBoxArray/data for querying purposes
-                if (tile.latestFeatureIndex)
-                    tile.retainedFeatureIndexes[symbolBucket.bucketInstanceId] = tile.latestFeatureIndex;
             }
+            // As long as this bucket is used in any committed placement, we have to hold onto
+            // the matching FeatureIndex/CollisionBoxArray/data for querying purposes
+            this.lastUsedBuckets[symbolBucket.bucketInstanceId] = true;
+            this.retainedBuckets[symbolBucket.bucketInstanceId] = new RetainedBucket(
+                bucketFeatureIndex,
+                symbolBucket.sourceLayerIndex,
+                symbolBucket.index
+            );
+
 
             if (layerIndex.addBucket(tile.tileID, symbolBucket, this.crossTileIDs)) {
                 symbolBucketsChanged = true;
@@ -253,7 +278,7 @@ class CrossTileSymbolIndex {
         return symbolBucketsChanged;
     }
 
-    pruneUnusedLayers(usedLayers: Array<string>) {
+    prune(usedLayers: Array<string>) {
         const usedLayerMap = {};
         usedLayers.forEach((usedLayer) => {
             usedLayerMap[usedLayer] = true;
@@ -263,6 +288,18 @@ class CrossTileSymbolIndex {
                 delete this.layerIndexes[layerId];
             }
         }
+
+        for (const bucketInstanceId of Object.keys(this.retainedBuckets).map(Number)) {
+            if (!this.lastUsedBuckets[bucketInstanceId]) {
+                // This bucket was no longer used in the latest placement,
+                // so discard the associated querying data if this was the
+                // last bucket to use it.
+                // Buckets waiting to be placed will still have their data owned by the tile itself
+                delete this.retainedBuckets[bucketInstanceId];
+            }
+        }
+
+        this.lastUsedBuckets = {}; // Reset for next time placement starts
     }
 }
 

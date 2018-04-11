@@ -20,7 +20,7 @@ import {
     getType as getSourceType,
     setType as setSourceType
 } from '../source/source';
-import { queryRenderedFeatures, querySourceFeatures } from '../source/query_features';
+import { queryRenderedFeatures, queryRenderedSymbols, querySourceFeatures } from '../source/query_features';
 import SourceCache from '../source/source_cache';
 import GeoJSONSource from '../source/geojson_source';
 import styleSpec from '../style-spec/reference/latest';
@@ -832,8 +832,27 @@ class Style extends Evented {
         const sourceResults = [];
         for (const id in this.sourceCaches) {
             if (params.layers && !includedSources[id]) continue;
-            const results = queryRenderedFeatures(this.sourceCaches[id], this._layers, queryGeometry, params, transform, this.placement ? this.placement.collisionIndex : null);
-            sourceResults.push(results);
+            sourceResults.push(
+                queryRenderedFeatures(
+                    this.sourceCaches[id],
+                    this._layers,
+                    queryGeometry.worldCoordinate,
+                    params,
+                    transform)
+            );
+        }
+
+        if (this.placement) {
+            // If a placement has run, query against its CollisionIndex
+            // for symbol results, and treat it as an extra source to merge
+            sourceResults.push(
+                queryRenderedSymbols(
+                    this._layers,
+                    queryGeometry.viewport,
+                    params,
+                    this.placement.collisionIndex,
+                    this.crossTileSymbolIndex)
+            );
         }
         return this._flattenRenderedFeatures(sourceResults);
     }
@@ -953,7 +972,6 @@ class Style extends Evented {
             const layerBucketsChanged = this.crossTileSymbolIndex.addLayer(styleLayer, layerTiles[styleLayer.source]);
             symbolBucketsChanged = symbolBucketsChanged || layerBucketsChanged;
         }
-        this.crossTileSymbolIndex.pruneUnusedLayers(this._order);
 
         // Anything that changes our "in progress" layer and tile indices requires us
         // to start over. When we start over, we do a full placement instead of incremental
@@ -977,10 +995,9 @@ class Style extends Evented {
 
             if (this.pauseablePlacement.isDone()) {
                 this.placement = this.pauseablePlacement.commit(this.placement, browser.now());
-                for (const id in this.sourceCaches) {
-                    // Allows tiles to prune data no longer necessary for querying
-                    this.sourceCaches[id].commitPlacement(this.placement.bucketInstanceIds);
-                }
+                // Discard querying data held for previous committed placement,
+                // remove unused layers
+                this.crossTileSymbolIndex.prune(this._order);
                 placementCommitted = true;
             }
 

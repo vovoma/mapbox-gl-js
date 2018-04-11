@@ -4,14 +4,14 @@ import type SourceCache from './source_cache';
 import type StyleLayer from '../style/style_layer';
 import type Coordinate from '../geo/coordinate';
 import type CollisionIndex from '../symbol/collision_index';
+import type CrossTileSymbolIndex from '../symbol/cross_tile_symbol_index';
 import type Transform from '../geo/transform';
 
 export function queryRenderedFeatures(sourceCache: SourceCache,
                             styleLayers: {[string]: StyleLayer},
                             queryGeometry: Array<Coordinate>,
                             params: { filter: FilterSpecification, layers: Array<string> },
-                            transform: Transform,
-                            collisionIndex: ?CollisionIndex) {
+                            transform: Transform) {
     const maxPitchScaleFactor = transform.maxPitchScaleFactor();
     const tilesIn = sourceCache.tilesIn(queryGeometry, maxPitchScaleFactor);
 
@@ -28,13 +28,37 @@ export function queryRenderedFeatures(sourceCache: SourceCache,
                 params,
                 transform,
                 maxPitchScaleFactor,
-                sourceCache.transform.calculatePosMatrix(tileIn.tileID.toUnwrapped()),
-                sourceCache.id,
-                collisionIndex)
+                sourceCache.transform.calculatePosMatrix(tileIn.tileID.toUnwrapped()))
         });
     }
 
     return mergeRenderedFeatureLayers(renderedFeatureLayers);
+}
+
+export function queryRenderedSymbols(styleLayers: {[string]: StyleLayer},
+                            queryGeometry: Array<Point>,
+                            params: { filter: FilterSpecification, layers: Array<string> },
+                            collisionIndex: CollisionIndex,
+                            crossTileSymbolIndex: CrossTileSymbolIndex) {
+    const result = {};
+    const renderedSymbols = collisionIndex.queryRenderedSymbols(queryGeometry);
+    for (const bucketInstanceId of Object.keys(renderedSymbols).map(Number)) {
+        const queryData = crossTileSymbolIndex.retainedBuckets[bucketInstanceId];
+        const bucketSymbols = queryData.featureIndex.lookupSymbolFeatures(
+                renderedSymbols[bucketInstanceId],
+                queryData.bucketIndex,
+                queryData.sourceLayerIndex,
+                params.filter,
+                params.layers,
+                styleLayers);
+        for (const layerID in bucketSymbols) {
+            const resultFeatures = result[layerID] = result[layerID] || [];
+            for (const symbolFeature of bucketSymbols[layerID]) {
+                resultFeatures.push(symbolFeature.feature);
+            }
+        }
+    }
+    return result;
 }
 
 export function querySourceFeatures(sourceCache: SourceCache, params: any) {
